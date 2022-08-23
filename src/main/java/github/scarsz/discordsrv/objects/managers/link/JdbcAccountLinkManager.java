@@ -353,6 +353,8 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     @Override
     public String process(String code, String discordId) {
         ensureOffThread(false);
+        // 複数アカウントをリンクする
+        /*
         List<UUID> existingUuids = getUuid(discordId);
         boolean alreadyLinked = !existingUuids.isEmpty();
         if (alreadyLinked) {
@@ -368,6 +370,7 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
                         }).collect(Collectors.joining("\n"));
             }
         }
+        */
 
         // strip the code to get rid of non-numeric characters
         code = code.replaceAll("[^0-9]", "");
