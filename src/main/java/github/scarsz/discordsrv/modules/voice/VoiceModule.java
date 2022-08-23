@@ -251,11 +251,11 @@ public class VoiceModule extends ListenerAdapter implements Listener {
             }
 
             for (Member member : members) {
-                UUID uuid = getUniqueId(member);
+                List<UUID> uuids = getUniqueId(member);
                 VoiceChannel playerChannel = member.getVoiceState().getChannel();
 
-                Network playerNetwork = uuid != null ? networks.stream()
-                        .filter(n -> n.contains(uuid))
+                Network playerNetwork = uuids != null ? networks.stream()
+                        .filter(n -> uuids.stream().anyMatch(n::contains))
                         .findAny().orElse(null) : null;
 
                 VoiceChannel shouldBeInChannel;
@@ -334,23 +334,25 @@ public class VoiceModule extends ListenerAdapter implements Listener {
         checkMutedUser(event.getChannelJoined(), event.getMember());
         if (!event.getChannelJoined().equals(getLobbyChannel())) return;
 
-        UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
-        if (uuid == null) return;
-        OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
-        if (player.isOnline()) markDirty(player.getPlayer());
+        List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
+        for (UUID uuid : uuids) {
+            OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
+            if (player.isOnline()) markDirty(player.getPlayer());
+        }
     }
 
     @Override
     public void onGuildVoiceMove(GuildVoiceMoveEvent event) {
         if (event.getChannelJoined().getParent() != null && !event.getChannelJoined().getParent().equals(getCategory()) &&
                 event.getChannelLeft().getParent() != null && event.getChannelLeft().getParent().equals(getCategory())) {
-            UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
-            if (uuid == null) return;
-            OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
-            if (player.isOnline()) {
-                networks.stream()
-                        .filter(network -> network.contains(player.getPlayer().getUniqueId()))
-                        .forEach(network -> network.remove(player.getPlayer()));
+            List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
+            for (UUID uuid : uuids) {
+                OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
+                if (player.isOnline()) {
+                    networks.stream()
+                            .filter(network -> network.contains(player.getPlayer().getUniqueId()))
+                            .forEach(network -> network.remove(player.getPlayer()));
+                }
             }
         }
         checkMutedUser(event.getChannelJoined(), event.getMember());
@@ -361,13 +363,14 @@ public class VoiceModule extends ListenerAdapter implements Listener {
         checkMutedUser(event.getChannelJoined(), event.getMember());
         if (event.getChannelLeft().getParent() == null || !event.getChannelLeft().getParent().equals(getCategory())) return;
 
-        UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
-        if (uuid == null) return;
-        OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
-        if (player.isOnline()) {
-            networks.stream()
-                    .filter(network -> network.contains(player.getPlayer()))
-                    .forEach(network -> network.remove(player.getPlayer()));
+        List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getMember().getUser().getId());
+        for (UUID uuid : uuids) {
+            OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
+            if (player.isOnline()) {
+                networks.stream()
+                        .filter(network -> network.contains(player.getPlayer()))
+                        .forEach(network -> network.remove(player.getPlayer()));
+            }
         }
     }
 
@@ -443,7 +446,7 @@ public class VoiceModule extends ListenerAdapter implements Listener {
         return discordId != null ? getGuild().getMemberById(discordId) : null;
     }
 
-    public static UUID getUniqueId(Member member) {
+    public static List<UUID> getUniqueId(Member member) {
         return DiscordSRV.getPlugin().getAccountLinkManager().getUuid(member.getId());
     }
 

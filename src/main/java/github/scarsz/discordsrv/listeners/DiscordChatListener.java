@@ -258,9 +258,8 @@ public class DiscordChatListener extends ListenerAdapter {
         }
 
         // apply placeholder API values
-        OfflinePlayer authorPlayer = null;
-        UUID authorLinkedUuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getAuthor().getId());
-        if (authorLinkedUuid != null) authorPlayer = Bukkit.getOfflinePlayer(authorLinkedUuid);
+        OfflinePlayer authorPlayer = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getAuthor().getId()).stream()
+                .map(Bukkit::getOfflinePlayer).findFirst().orElse(null);
 
         formatMessage = PlaceholderUtil.replacePlaceholders(formatMessage, authorPlayer);
         if (!MessageUtil.isLegacy(formatMessage)) {
@@ -333,8 +332,9 @@ public class DiscordChatListener extends ListenerAdapter {
                 replacePlaceholders(placedMessage, event, selectedRoles));
 
         OfflinePlayer authorPlayer = null;
-        UUID authorLinkedUuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getAuthor().getId());
-        if (authorLinkedUuid != null) authorPlayer = Bukkit.getOfflinePlayer(authorLinkedUuid);
+        List<UUID> authorLinkedUuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(event.getAuthor().getId());
+        if (authorLinkedUuids != null && !authorLinkedUuids.isEmpty())
+            authorPlayer = Bukkit.getOfflinePlayer(authorLinkedUuids.get(0));
 
         placedMessage = PlaceholderUtil.replacePlaceholders(placedMessage, authorPlayer);
 

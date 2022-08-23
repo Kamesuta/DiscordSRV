@@ -116,7 +116,7 @@ public class GroupSynchronizationManager extends ListenerAdapter implements List
             // otherwise, only online players are synchronized
             DiscordUtil.getJda().getGuilds().stream()
                     .flatMap(guild -> guild.getMembers().stream())
-                    .map(member -> DiscordSRV.getPlugin().getAccountLinkManager().getUuid(member.getId()))
+                    .flatMap(member -> DiscordSRV.getPlugin().getAccountLinkManager().getUuid(member.getId()).stream())
                     .filter(Objects::nonNull)
                     .map(Bukkit::getOfflinePlayer)
                     .forEach(players::add);
@@ -130,13 +130,13 @@ public class GroupSynchronizationManager extends ListenerAdapter implements List
     }
 
     public void resync(User user, SyncDirection direction, SyncCause cause) {
-        UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
-        if (uuid == null) {
+        List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
+        if (uuids.isEmpty()) {
             DiscordSRV.debug(Debug.GROUP_SYNC, "Tried to sync groups for " + user + " but their Discord account is not linked to a MC account");
             return;
         }
 
-        resync(Bukkit.getOfflinePlayer(uuid), direction, cause);
+        uuids.forEach(uuid -> resync(Bukkit.getOfflinePlayer(uuid), direction, cause));
     }
 
     public void resync(OfflinePlayer player, SyncCause cause) {
