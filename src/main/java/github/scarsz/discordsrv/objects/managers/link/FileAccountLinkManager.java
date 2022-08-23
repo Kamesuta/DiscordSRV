@@ -23,6 +23,9 @@ package github.scarsz.discordsrv.objects.managers.link;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
+import com.google.common.collect.Streams;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.stream.MalformedJsonException;
@@ -95,17 +98,28 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
 
             jsonObject.entrySet().forEach(entry -> {
                 String key = entry.getKey();
-                String value = entry.getValue().getAsString();
-                if (key.isEmpty() || value.isEmpty()) {
+                if (key.isEmpty()) {
+                    // empty values are not allowed.
+                    return;
+                }
+
+                JsonElement entryValue = entry.getValue();
+                List<String> values = !entryValue.isJsonArray()
+                        ? Collections.singletonList(entryValue.getAsString())
+                        : Streams.stream(entryValue.getAsJsonArray())
+                        .map(JsonElement::getAsString)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toList());
+                if (values.isEmpty()) {
                     // empty values are not allowed.
                     return;
                 }
 
                 try {
-                    linkedAccounts.put(key, UUID.fromString(value));
+                    values.forEach(value -> linkedAccounts.put(key, UUID.fromString(value)));
                 } catch (Exception e) {
                     try {
-                        linkedAccounts.put(value, UUID.fromString(key));
+                        values.forEach(value -> linkedAccounts.put(value, UUID.fromString(key)));
                     } catch (Exception f) {
                         DiscordSRV.warning("Failed to load linkedaccounts.json file. It's extremely recommended to delete your linkedaccounts.json file.");
                     }
@@ -150,13 +164,15 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
 
     @Override
     public String process(String linkCode, String discordId) {
+        User user = DiscordUtil.getUserById(discordId);
+        String mention = user == null ? "" : user.getAsMention();
+
+        // 複数アカウントをリンクする
+        /*
         boolean contains;
         synchronized (linkedAccounts) {
             contains = linkedAccounts.linkedAccounts.containsKey(discordId);
         }
-
-        User user = DiscordUtil.getUserById(discordId);
-        String mention = user == null ? "" : user.getAsMention();
 
         if (contains) {
             if (DiscordSRV.config().getBoolean("MinecraftDiscordAccountLinkedAllowRelinkBySendingANewCode")) {
@@ -175,6 +191,7 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
                 }).collect(Collectors.joining("\n"));
             }
         }
+        */
 
         // strip the code to get rid of non-numeric characters
         linkCode = linkCode.replaceAll("[^0-9]", "");
@@ -267,8 +284,9 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
         }
         DiscordSRV.debug(Debug.ACCOUNT_LINKING, "File backed link: " + discordId + ": " + uuid);
 
+        // Discord->Minecraftのリンクはそのまま
+        //unlink(discordId);
         // make sure the user isn't linked
-        unlink(discordId);
         unlink(uuid);
 
         synchronized (linkedAccounts) {
@@ -315,7 +333,19 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
         try {
             JsonObject map = new JsonObject();
             synchronized (linkedAccounts) {
-                linkedAccounts.linkedAccounts.forEach((discordId, uuid) -> map.addProperty(discordId, String.valueOf(uuid)));
+                linkedAccounts.linkedAccounts.asMap().forEach((discordId, uuids) -> {
+                    if (uuids.isEmpty()) return;
+
+                    if (uuids.size() == 1) {
+                        Optional<UUID> uuidOpt = uuids.stream().findFirst();
+                        map.addProperty(discordId, uuidOpt.get().toString());
+                        return;
+                    }
+
+                    JsonArray array = new JsonArray();
+                    uuids.stream().map(String::valueOf).forEach(array::add);
+                    map.add(discordId, array);
+                });
             }
             FileUtils.writeStringToFile(DiscordSRV.getPlugin().getLinkedAccountsFile(), map.toString(), StandardCharsets.UTF_8);
         } catch (IOException e) {
