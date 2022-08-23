@@ -1834,12 +1834,14 @@ public class DiscordSRV extends JavaPlugin {
     public void broadcastMessageToMinecraftServer(String channel, String message, User author) {
         // apply placeholder API values
         Player authorPlayer = null;
-        UUID authorLinkedUuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(author.getId());
-        if (authorLinkedUuid != null) authorPlayer = Bukkit.getPlayer(authorLinkedUuid);
+        List<UUID> authorLinkedUuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(author.getId());
+        for (UUID authorLinkedUuid : authorLinkedUuids) {
+            if (authorLinkedUuid != null) authorPlayer = Bukkit.getPlayer(authorLinkedUuid);
 
-        message = PlaceholderUtil.replacePlaceholders(message, authorPlayer);
+            message = PlaceholderUtil.replacePlaceholders(message, authorPlayer);
 
-        broadcastMessageToMinecraftServer(channel, MessageUtil.toComponent(message), author);
+            broadcastMessageToMinecraftServer(channel, MessageUtil.toComponent(message), author);
+        }
     }
 
     public void broadcastMessageToMinecraftServer(String channel, Component message, User author) {

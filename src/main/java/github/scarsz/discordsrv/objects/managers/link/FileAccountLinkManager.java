@@ -22,6 +22,9 @@
 
 package github.scarsz.discordsrv.objects.managers.link;
 
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.stream.MalformedJsonException;
@@ -31,7 +34,6 @@ import github.scarsz.discordsrv.util.DiscordUtil;
 import github.scarsz.discordsrv.util.LangUtil;
 import github.scarsz.discordsrv.util.MessageUtil;
 import github.scarsz.discordsrv.util.PrettyUtil;
-import org.apache.commons.collections4.bidimap.DualHashBidiMap;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.bukkit.Bukkit;
@@ -39,14 +41,36 @@ import org.bukkit.OfflinePlayer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class FileAccountLinkManager extends AbstractAccountLinkManager {
+    private final BidiListMultimap linkedAccounts = new BidiListMultimap();
 
-    private final DualHashBidiMap<String, UUID> linkedAccounts = new DualHashBidiMap<>();
+    private static class BidiListMultimap {
+        public final ListMultimap<String, UUID> linkedAccounts = Multimaps.newListMultimap(new HashMap<>(), ArrayList::new);
+        public final HashMap<UUID, String> linkedDiscords = new HashMap<>();
+
+        public void clear() {
+            linkedAccounts.clear();
+            linkedDiscords.clear();
+        }
+
+        public void put(String discordId, UUID uuid) {
+            linkedAccounts.put(discordId, uuid);
+            linkedDiscords.put(uuid, discordId);
+        }
+
+        public void removeDiscord(UUID uuid) {
+            linkedDiscords.remove(uuid);
+            linkedAccounts.values().remove(uuid);
+        }
+
+        public void removeAccounts(String discordId) {
+            linkedAccounts.removeAll(discordId);
+            linkedDiscords.values().remove(discordId);
+        }
+    }
 
     @SuppressWarnings("ConstantConditions") // MalformedJsonException is a checked exception
     public FileAccountLinkManager() {
@@ -105,8 +129,8 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public Map<String, UUID> getLinkedAccounts() {
-        return linkedAccounts;
+    public Multimap<String, UUID> getLinkedAccounts() {
+        return linkedAccounts.linkedAccounts;
     }
 
     @Override
@@ -115,33 +139,35 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public UUID getUuidFromCache(String discordId) {
+    public List<UUID> getUuidFromCache(String discordId) {
         return getUuid(discordId);
     }
 
     @Override
     public int getLinkedAccountCount() {
-        return linkedAccounts.size();
+        return linkedAccounts.linkedAccounts.keys().size();
     }
 
     @Override
     public String process(String linkCode, String discordId) {
         boolean contains;
         synchronized (linkedAccounts) {
-            contains = linkedAccounts.containsKey(discordId);
+            contains = linkedAccounts.linkedAccounts.containsKey(discordId);
         }
         if (contains) {
             if (DiscordSRV.config().getBoolean("MinecraftDiscordAccountLinkedAllowRelinkBySendingANewCode")) {
                 unlink(discordId);
             } else {
-                UUID uuid;
+                List<UUID> uuids;
                 synchronized (linkedAccounts) {
-                    uuid = linkedAccounts.get(discordId);
+                    uuids = linkedAccounts.linkedAccounts.get(discordId);
                 }
-                OfflinePlayer offlinePlayer = DiscordSRV.getPlugin().getServer().getOfflinePlayer(uuid);
-                return LangUtil.Message.ALREADY_LINKED.toString()
-                        .replace("%username%", PrettyUtil.beautifyUsername(offlinePlayer, "<Unknown>", false))
-                        .replace("%uuid%", uuid.toString());
+                return uuids.stream().map(uuid -> {
+                    OfflinePlayer offlinePlayer = DiscordSRV.getPlugin().getServer().getOfflinePlayer(uuid);
+                    return LangUtil.Message.ALREADY_LINKED.toString()
+                            .replace("%username%", PrettyUtil.beautifyUsername(offlinePlayer, "<Unknown>", false))
+                            .replace("%uuids%", uuids.toString());
+                }).collect(Collectors.joining("\n"));
             }
         }
 
@@ -152,18 +178,21 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
             link(discordId, linkingCodes.get(linkCode));
             linkingCodes.remove(linkCode);
 
-            OfflinePlayer player = Bukkit.getOfflinePlayer(getUuid(discordId));
-            if (player.isOnline()) {
-                MessageUtil.sendMessage(Bukkit.getPlayer(getUuid(discordId)), LangUtil.Message.MINECRAFT_ACCOUNT_LINKED.toString()
-                        .replace("%username%", DiscordUtil.getUserById(discordId).getName())
-                        .replace("%id%", DiscordUtil.getUserById(discordId).getId())
-                );
-            }
+            return getUuid(discordId).stream()
+                    .map(uuid -> {
+                        OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
+                        if (player.isOnline()) {
+                            MessageUtil.sendMessage(Bukkit.getPlayer(uuid), LangUtil.Message.MINECRAFT_ACCOUNT_LINKED.toString()
+                                    .replace("%username%", DiscordUtil.getUserById(discordId).getName())
+                                    .replace("%id%", DiscordUtil.getUserById(discordId).getId())
+                            );
+                        }
 
-            return LangUtil.Message.DISCORD_ACCOUNT_LINKED.toString()
-                    .replace("%name%", PrettyUtil.beautifyUsername(player, "<Unknown>", false))
-                    .replace("%displayname%", PrettyUtil.beautifyNickname(player, "<Unknown>", false))
-                    .replace("%uuid%", getUuid(discordId).toString());
+                        return LangUtil.Message.DISCORD_ACCOUNT_LINKED.toString()
+                                .replace("%name%", PrettyUtil.beautifyUsername(player, "<Unknown>", false))
+                                .replace("%displayname%", PrettyUtil.beautifyNickname(player, "<Unknown>", false))
+                                .replace("%uuid%", uuid.toString());
+                    }).collect(Collectors.joining("\n"));
         }
 
         return linkCode.length() == 4
@@ -174,7 +203,7 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     @Override
     public String getDiscordId(UUID uuid) {
         synchronized (linkedAccounts) {
-            return linkedAccounts.getKey(uuid);
+            return linkedAccounts.linkedDiscords.get(uuid);
         }
     }
 
@@ -189,7 +218,7 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
         for (UUID uuid : uuids) {
             String discordId;
             synchronized (linkedAccounts) {
-                discordId = linkedAccounts.getKey(uuid);
+                discordId = linkedAccounts.linkedDiscords.get(uuid);
             }
             if (discordId != null) results.put(uuid, discordId);
         }
@@ -197,14 +226,14 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public UUID getUuid(String discordId) {
+    public List<UUID> getUuid(String discordId) {
         synchronized (linkedAccounts) {
-            return linkedAccounts.get(discordId);
+            return linkedAccounts.linkedAccounts.get(discordId);
         }
     }
 
     @Override
-    public UUID getUuidBypassCache(String discordId) {
+    public List<UUID> getUuidBypassCache(String discordId) {
         return getUuid(discordId);
     }
 
@@ -212,11 +241,11 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     public Map<String, UUID> getManyUuids(Set<String> discordIds) {
         Map<String, UUID> results = new HashMap<>();
         for (String discordId : discordIds) {
-            UUID uuid;
+            List<UUID> uuids;
             synchronized (linkedAccounts) {
-                uuid = linkedAccounts.get(discordId);
+                uuids = linkedAccounts.linkedAccounts.get(discordId);
             }
-            if (uuid != null) results.put(discordId, uuid);
+            uuids.forEach(uuid -> results.put(discordId, uuid));
         }
         return results;
     }
@@ -242,31 +271,31 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
     public void unlink(UUID uuid) {
         String discordId;
         synchronized (linkedAccounts) {
-            discordId = linkedAccounts.getKey(uuid);
+            discordId = linkedAccounts.linkedDiscords.get(uuid);
         }
         if (discordId == null) return;
 
         synchronized (linkedAccounts) {
-            beforeUnlink(uuid, discordId);
-            linkedAccounts.removeValue(uuid);
+            beforeUnlink(Collections.singletonList(uuid), discordId);
+            linkedAccounts.removeDiscord(uuid);
         }
 
-        afterUnlink(uuid, discordId);
+        afterUnlink(Collections.singletonList(uuid), discordId);
     }
 
     @Override
     public void unlink(String discordId) {
-        UUID uuid;
+        List<UUID> uuids;
         synchronized (linkedAccounts) {
-            uuid = linkedAccounts.get(discordId);
+            uuids = linkedAccounts.linkedAccounts.get(discordId);
         }
-        if (uuid == null) return;
+        if (uuids.isEmpty()) return;
 
         synchronized (linkedAccounts) {
-            beforeUnlink(uuid, discordId);
-            linkedAccounts.remove(discordId);
+            beforeUnlink(uuids, discordId);
+            linkedAccounts.removeAccounts(discordId);
         }
-        afterUnlink(uuid, discordId);
+        afterUnlink(uuids, discordId);
     }
 
     @Override
@@ -276,7 +305,7 @@ public class FileAccountLinkManager extends AbstractAccountLinkManager {
         try {
             JsonObject map = new JsonObject();
             synchronized (linkedAccounts) {
-                linkedAccounts.forEach((discordId, uuid) -> map.addProperty(discordId, String.valueOf(uuid)));
+                linkedAccounts.linkedAccounts.forEach((discordId, uuid) -> map.addProperty(discordId, String.valueOf(uuid)));
             }
             FileUtils.writeStringToFile(DiscordSRV.getPlugin().getLinkedAccountsFile(), map.toString(), StandardCharsets.UTF_8);
         } catch (IOException e) {

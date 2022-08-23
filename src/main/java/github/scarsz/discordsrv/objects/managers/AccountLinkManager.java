@@ -22,8 +22,10 @@
 
 package github.scarsz.discordsrv.objects.managers;
 
+import com.google.common.collect.Multimap;
 import org.bukkit.event.Listener;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -52,7 +54,7 @@ public abstract class AccountLinkManager implements Listener {
      * @throws IllegalStateException if this is requested on Bukkit's main thread for a player that isn't online when DiscordSRV is using a non-memory storage backend (in the future)
      * @see #isInCache(String)
      */
-    public abstract UUID getUuid(String discordId);
+    public abstract List<UUID> getUuid(String discordId);
 
     /**
      * Gets the amount of linked accounts. This is kept in memory and is recommended over doing {@code getLinkedAccounts().size()}.
@@ -85,13 +87,13 @@ public abstract class AccountLinkManager implements Listener {
      * Gets all linked accounts.
      *
      * @return all linked accounts in a Discord ID-UUID map.
+     * @throws IllegalStateException if this is requested on Bukkit's main thread when DiscordSRV is using a non-memory storage backend (in the future)
      * @see #getUuid(String)
      * @see #getDiscordId(UUID)
      * @see #getManyUuids(Set)
      * @see #getManyDiscordIds(Set)
-     * @throws IllegalStateException if this is requested on Bukkit's main thread when DiscordSRV is using a non-memory storage backend (in the future)
      */
-    public abstract Map<String, UUID> getLinkedAccounts();
+    public abstract Multimap<String, UUID> getLinkedAccounts();
 
     /**
      * Gets the Discord ID for the given player from the cache
@@ -111,7 +113,7 @@ public abstract class AccountLinkManager implements Listener {
      * @return the given user's Minecraft uuid if it is in the cache
      * @see #isInCache(String)
      */
-    public abstract UUID getUuidFromCache(String discordId);
+    public abstract List<UUID> getUuidFromCache(String discordId);
 
     /**
      * <p>Not recommended, may lead to blocking requests to storage backends</p>
@@ -127,7 +129,7 @@ public abstract class AccountLinkManager implements Listener {
      *
      * @see #getUuid(String)
      */
-    public abstract UUID getUuidBypassCache(String discordId);
+    public abstract List<UUID> getUuidBypassCache(String discordId);
 
     /**
      * Checks if a given player's Discord account is in cache.

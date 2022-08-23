@@ -41,10 +41,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -147,9 +144,9 @@ public abstract class AbstractAccountLinkManager extends AccountLinkManager {
         }
     }
 
-    protected void beforeUnlink(UUID uuid, String discordId) {
+    protected void beforeUnlink(List<UUID> uuids, String discordId) {
         if (DiscordSRV.getPlugin().isGroupRoleSynchronizationEnabled()) {
-            DiscordSRV.getPlugin().getGroupSynchronizationManager().removeSynchronizables(Bukkit.getOfflinePlayer(uuid));
+            uuids.forEach(uuid -> DiscordSRV.getPlugin().getGroupSynchronizationManager().removeSynchronizables(Bukkit.getOfflinePlayer(uuid)));
         } else {
             try {
                 // remove user from linked role
@@ -159,38 +156,41 @@ public abstract class AbstractAccountLinkManager extends AccountLinkManager {
                     if (member != null) {
                         role.getGuild().removeRoleFromMember(member, role).queue();
                     } else {
-                        DiscordSRV.debug(Debug.ACCOUNT_LINKING, "Couldn't remove \"linked\" role from null member: " + uuid);
+                        DiscordSRV.debug(Debug.ACCOUNT_LINKING, "Couldn't remove \"linked\" role from null member: " + uuids);
                     }
                 } else {
                     DiscordSRV.debug(Debug.ACCOUNT_LINKING, "Couldn't remove user from null \"linked\" role");
                 }
             } catch (Throwable t) {
-                DiscordSRV.debug(Debug.ACCOUNT_LINKING, "Failed to remove \"linked\" role from [" + uuid + ":" + discordId + "] during unlink: " + ExceptionUtils.getMessage(t));
+                DiscordSRV.debug(Debug.ACCOUNT_LINKING, "Failed to remove \"linked\" role from [" + uuids + ":" + discordId + "] during unlink: " + ExceptionUtils.getMessage(t));
             }
         }
     }
 
-    protected void afterUnlink(UUID uuid, String discordId) {
+    protected void afterUnlink(List<UUID> uuids, String discordId) {
         Member member = DiscordUtil.getMemberById(discordId);
 
-        DiscordSRV.api.callEvent(new AccountUnlinkedEvent(discordId, uuid));
+        uuids.forEach(uuid -> DiscordSRV.api.callEvent(new AccountUnlinkedEvent(discordId, uuid)));
 
         // run unlink console commands
-        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
         User user = DiscordUtil.getUserById(discordId);
-        for (String command : DiscordSRV.config().getStringList("MinecraftDiscordAccountUnlinkedConsoleCommands")) {
-            command = command
-                    .replace("%minecraftplayername%", PrettyUtil.beautifyUsername(offlinePlayer, "[Unknown player]", false))
-                    .replace("%minecraftdisplayname%", PrettyUtil.beautifyNickname(offlinePlayer, "<Unknown name>", false))
-                    .replace("%minecraftuuid%", uuid.toString())
-                    .replace("%discordid%", discordId)
-                    .replace("%discordname%", user != null ? user.getName() : "")
-                    .replace("%discorddisplayname%", PrettyUtil.beautify(user, "", false));
-            if (StringUtils.isBlank(command)) continue;
-            if (PluginUtil.pluginHookIsEnabled("placeholderapi")) command = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(Bukkit.getPlayer(uuid), command);
+        for (UUID uuid : uuids) {
+            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
+            for (String command : DiscordSRV.config().getStringList("MinecraftDiscordAccountUnlinkedConsoleCommands")) {
+                command = command
+                        .replace("%minecraftplayername%", PrettyUtil.beautifyUsername(offlinePlayer, "[Unknown player]", false))
+                        .replace("%minecraftdisplayname%", PrettyUtil.beautifyNickname(offlinePlayer, "<Unknown name>", false))
+                        .replace("%minecraftuuid%", uuid.toString())
+                        .replace("%discordid%", discordId)
+                        .replace("%discordname%", user != null ? user.getName() : "")
+                        .replace("%discorddisplayname%", PrettyUtil.beautify(user, "", false));
+                if (StringUtils.isBlank(command)) continue;
+                if (PluginUtil.pluginHookIsEnabled("placeholderapi"))
+                    command = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(Bukkit.getPlayer(uuid), command);
 
-            String finalCommand = command;
-            Bukkit.getScheduler().scheduleSyncDelayedTask(DiscordSRV.getPlugin(), () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand));
+                String finalCommand = command;
+                Bukkit.getScheduler().scheduleSyncDelayedTask(DiscordSRV.getPlugin(), () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand));
+            }
         }
 
         if (member != null && DiscordSRV.config().getBoolean("NicknameSynchronizationEnabled")) {
@@ -201,9 +201,11 @@ public abstract class AbstractAccountLinkManager extends AccountLinkManager {
             }
         }
 
-        Player player = Bukkit.getPlayer(uuid);
-        if (player != null) {
-            DiscordSRV.getPlugin().getRequireLinkModule().noticePlayerUnlink(player);
+        for (UUID uuid : uuids) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                DiscordSRV.getPlugin().getRequireLinkModule().noticePlayerUnlink(player);
+            }
         }
     }
 }

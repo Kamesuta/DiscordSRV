@@ -37,6 +37,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -91,8 +92,8 @@ public class CommandLinked {
                     (StringUtils.isNumeric(target) && target.length() >= 17 && target.length() <= 20)) {
                 // target is a Discord ID
                 notifyInterpret(sender, "Discord ID");
-                UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(target);
-                notifyPlayer(sender, uuid != null ? Bukkit.getOfflinePlayer(uuid) : null);
+                List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(target);
+                uuids.forEach(uuid -> notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid)));
                 notifyDiscord(sender, target);
                 return;
             } else {
@@ -145,8 +146,8 @@ public class CommandLinked {
                         notifyInterpret(sender, "Discord name");
 
                         matches.stream().limit(5).forEach(user -> {
-                            UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
-                            notifyPlayer(sender, uuid != null ? Bukkit.getOfflinePlayer(uuid) : null);
+                            List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
+                            uuids.forEach(uuid -> notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid)));
                             notifyDiscord(sender, user.getId());
                         });
 

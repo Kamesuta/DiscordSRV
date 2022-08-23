@@ -22,6 +22,8 @@
 
 package github.scarsz.discordsrv.objects.managers.link;
 
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import com.google.gson.JsonObject;
 import com.mysql.jdbc.Driver;
 import github.scarsz.discordsrv.Debug;
@@ -50,6 +52,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @SuppressWarnings("SqlResolve")
 public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
@@ -290,7 +293,7 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public Map<String, UUID> getLinkedAccounts() {
+    public Multimap<String, UUID> getLinkedAccounts() {
         ensureOffThread(false);
         Map<String, UUID> accounts = new HashMap<>();
 
@@ -304,7 +307,7 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
             DiscordSRV.error(e);
         }
 
-        return accounts;
+        return Multimaps.forMap(accounts);
     }
 
     @Override
@@ -313,8 +316,8 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public UUID getUuidFromCache(String discordId) {
-        return cache.getKey(discordId);
+    public List<UUID> getUuidFromCache(String discordId) {
+        return Collections.singletonList(cache.getKey(discordId));
     }
 
     @Override
@@ -350,16 +353,19 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     @Override
     public String process(String code, String discordId) {
         ensureOffThread(false);
-        UUID existingUuid = getUuid(discordId);
-        boolean alreadyLinked = existingUuid != null;
+        List<UUID> existingUuids = getUuid(discordId);
+        boolean alreadyLinked = !existingUuids.isEmpty();
         if (alreadyLinked) {
             if (DiscordSRV.config().getBoolean("MinecraftDiscordAccountLinkedAllowRelinkBySendingANewCode")) {
                 unlink(discordId);
             } else {
-                OfflinePlayer offlinePlayer = DiscordSRV.getPlugin().getServer().getOfflinePlayer(existingUuid);
-                return LangUtil.Message.ALREADY_LINKED.toString()
-                        .replace("%username%", String.valueOf(offlinePlayer.getName()))
-                        .replace("%uuid%", offlinePlayer.getUniqueId().toString());
+                return existingUuids.stream()
+                        .map(existingUuid -> {
+                            OfflinePlayer offlinePlayer = DiscordSRV.getPlugin().getServer().getOfflinePlayer(existingUuid);
+                            return LangUtil.Message.ALREADY_LINKED.toString()
+                                    .replace("%username%", String.valueOf(offlinePlayer.getName()))
+                                    .replace("%uuid%", offlinePlayer.getUniqueId().toString());
+                        }).collect(Collectors.joining("\n"));
             }
         }
 
@@ -467,16 +473,16 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public UUID getUuid(String discordId) {
+    public List<UUID> getUuid(String discordId) {
         synchronized (cache) {
-            if (cache.containsValue(discordId)) return cache.getKey(discordId);
+            if (cache.containsValue(discordId)) return Collections.singletonList(cache.getKey(discordId));
         }
         ensureOffThread(true);
-        UUID uuid = getUuidBypassCache(discordId);
+        List<UUID> uuids = getUuidBypassCache(discordId);
         synchronized (cache) {
-            cache.put(uuid, discordId);
+            uuids.forEach(uuid -> cache.put(uuid, discordId));
         }
-        return uuid;
+        return uuids;
     }
 
     @Override
@@ -485,20 +491,20 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
     }
 
     @Override
-    public UUID getUuidBypassCache(String discordId) {
-        UUID uuid = null;
+    public List<UUID> getUuidBypassCache(String discordId) {
+        List<UUID> uuids = new ArrayList<>();
         try (final PreparedStatement statement = connection.prepareStatement("select uuid from " + accountsTable + " where discord = ?")) {
             statement.setString(1, discordId);
 
             try (final ResultSet result = statement.executeQuery()) {
                 if (result.next()) {
-                    uuid = UUID.fromString(result.getString("uuid"));
+                    uuids.add(UUID.fromString(result.getString("uuid")));
                 }
             }
         } catch (SQLException e) {
             DiscordSRV.error(e);
         }
-        return uuid;
+        return uuids;
     }
 
     @Override
@@ -582,7 +588,7 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
         String discord = getDiscordId(uuid);
         if (discord == null) return;
 
-        beforeUnlink(uuid, discord);
+        beforeUnlink(Collections.singletonList(uuid), discord);
         try (final PreparedStatement statement = connection.prepareStatement("delete from " + accountsTable + " where `uuid` = ?")) {
             statement.setString(1, uuid.toString());
             statement.executeUpdate();
@@ -590,16 +596,16 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
             DiscordSRV.error(e);
         }
         cache.remove(uuid);
-        afterUnlink(uuid, discord);
+        afterUnlink(Collections.singletonList(uuid), discord);
     }
 
     @Override
     public void unlink(String discordId) {
         ensureOffThread(false);
-        UUID uuid = getUuid(discordId);
-        if (uuid == null) return;
+        List<UUID> uuids = getUuid(discordId);
+        if (uuids.isEmpty()) return;
 
-        beforeUnlink(uuid, discordId);
+        beforeUnlink(uuids, discordId);
         try (final PreparedStatement statement = connection.prepareStatement("delete from " + accountsTable + " where `discord` = ?")) {
             statement.setString(1, discordId);
             statement.executeUpdate();
@@ -607,7 +613,7 @@ public class JdbcAccountLinkManager extends AbstractAccountLinkManager {
             DiscordSRV.error(e);
         }
         cache.removeValue(discordId);
-        afterUnlink(uuid, discordId);
+        afterUnlink(uuids, discordId);
     }
 
     @Override

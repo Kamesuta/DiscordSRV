@@ -36,6 +36,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -97,11 +98,11 @@ public class CommandUnlink {
                     (StringUtils.isNumeric(target) && target.length() >= 17 && target.length() <= 20)) {
                 // target is a Discord ID
                 notifyInterpret(sender, "Discord ID");
-                UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(target);
-                notifyPlayer(sender, uuid != null ? Bukkit.getOfflinePlayer(uuid) : null);
+                List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(target);
+                uuids.forEach(uuid -> notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid)));
                 notifyDiscord(sender, target);
-                if (uuid != null) {
-                    DiscordSRV.getPlugin().getAccountLinkManager().unlink(uuid);
+                if (!uuids.isEmpty()) {
+                    uuids.forEach(uuid -> DiscordSRV.getPlugin().getAccountLinkManager().unlink(uuid));
                     notifyUnlinked(sender);
                 }
                 return;
@@ -143,9 +144,9 @@ public class CommandUnlink {
                         if (matches.size() == 1) {
                             User user = matches.iterator().next();
                             notifyDiscord(sender, user.getId());
-                            UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
-                            if (uuid != null) {
-                                notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid));
+                            List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
+                            if (!uuids.isEmpty()) {
+                                uuids.forEach(uuid -> notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid)));
                                 DiscordSRV.getPlugin().getAccountLinkManager().unlink(user.getId());
                                 notifyUnlinked(sender);
                             } else {
@@ -153,8 +154,8 @@ public class CommandUnlink {
                             }
                         } else {
                             matches.stream().limit(5).forEach(user -> {
-                                UUID uuid = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
-                                notifyPlayer(sender, uuid != null ? Bukkit.getOfflinePlayer(uuid) : null);
+                                List<UUID> uuids = DiscordSRV.getPlugin().getAccountLinkManager().getUuid(user.getId());
+                                uuids.forEach(uuid -> notifyPlayer(sender, Bukkit.getOfflinePlayer(uuid)));
                                 notifyDiscord(sender, user.getId());
                             });
 
